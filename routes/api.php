@@ -113,13 +113,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/orders/{order}', [OrderController::class, 'show']);
 
     Route::patch(
-        '/orders/{order}/status',
-        [OrderController::class, 'updateStatus']
-    );
-
-    Route::patch(
         '/orders/{order}/cancel',
         [OrderController::class, 'cancel']
+    );
+
+    //Restaurant Owner routes for order management
+    Route::get('/restaurant/orders', [OrderController::class, 'restaurantOrders']);
+
+    Route::patch(
+        '/orders/{order}/status',
+        [OrderController::class, 'updateStatus']
     );
 
     Route::patch(

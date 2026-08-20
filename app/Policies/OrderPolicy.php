@@ -89,4 +89,18 @@ class OrderPolicy
 
         return Response::allow();
     }
+
+
+    // public function viewRestaurantOrders(
+    //     User $user,
+    //     Order $order
+    // ): Response {
+    //     if ($user->id !== $order->restaurant->user_id) {
+    //         return Response::deny(
+    //             'You are not authorized to view this restaurant order.'
+    //         );
+    //     }
+
+    //     return Response::allow();
+    // }
 }
