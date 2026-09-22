@@ -11,6 +11,7 @@ class Order extends Model
     protected $fillable = [
         'user_id',
         'restaurant_id',
+        'delivery_zone_id',
         'order_number',
         'status',
         'subtotal',
@@ -41,5 +42,9 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+    public function deliveryZone(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryZone::class);
     }
 }

@@ -22,6 +22,10 @@ return new class extends Migration
                 ->constrained()
                 ->cascadeOnDelete();
 
+            $table->foreignId('delivery_zone_id')
+                ->constrained('delivery_zones')
+                ->restrictOnDelete();
+
             $table->string('order_number')->unique();
 
             $table->enum('status', [

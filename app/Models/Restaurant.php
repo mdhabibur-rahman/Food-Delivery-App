@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
@@ -45,5 +46,9 @@ class Restaurant extends Model
     public function foods(): HasMany
     {
         return $this->hasMany(Food::class);
+    }
+    public function deliveryZones(): BelongsToMany
+    {
+        return $this->belongsToMany(DeliveryZone::class);
     }
 }

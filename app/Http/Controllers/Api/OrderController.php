@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Cart;
+use App\Models\DeliveryZone;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Restaurant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -98,9 +100,105 @@ class OrderController extends Controller
     //         ], 201);
     //     });
     // }
+    // public function checkout(Request $request): JsonResponse
+    // {
+    //     $request->validate([
+    //         'delivery_address' => [
+    //             'required',
+    //             'string',
+    //             'max:1000',
+    //         ],
+    //     ]);
+
+    //     $user = $request->user();
+
+    //     $cart = Cart::with('items.food')
+    //         ->where('user_id', $user->id)
+    //         ->firstOrFail();
+
+    //     if ($cart->items->isEmpty()) {
+    //         return response()->json([
+    //             'message' => 'Your cart is empty.',
+    //         ], 422);
+    //     }
+
+    //     // Make sure all cart items belong to the same restaurant.
+    //     $restaurantIds = $cart->items
+    //         ->pluck('food.restaurant_id')
+    //         ->unique();
+
+    //     if ($restaurantIds->count() > 1) {
+    //         return response()->json([
+    //             'message' => 'All items in your cart must be from the same restaurant.',
+    //         ], 422);
+    //     }
+
+    //     // Make sure all foods are currently available.
+    //     $unavailableItems = $cart->items->filter(function ($item) {
+    //         return ! $item->food->is_available;
+    //     });
+
+    //     if ($unavailableItems->isNotEmpty()) {
+    //         return response()->json([
+    //             'message' => 'Some items in your cart are currently unavailable.',
+    //         ], 422);
+    //     }
+
+    //     return DB::transaction(function () use ($cart, $request, $user) {
+
+    //         $restaurantId = $cart->items->first()->food->restaurant_id;
+
+    //         $subtotal = $cart->items->sum(function ($item) {
+    //             return $item->quantity * $item->food->price;
+    //         });
+
+    //         $deliveryFee = 0;
+
+    //         $total = $subtotal + $deliveryFee;
+
+    //         $order = Order::create([
+    //             'user_id' => $user->id,
+    //             'restaurant_id' => $restaurantId,
+    //             'order_number' => 'ORD-' . strtoupper(Str::random(10)),
+    //             'status' => 'pending',
+    //             'subtotal' => $subtotal,
+    //             'delivery_fee' => $deliveryFee,
+    //             'total' => $total,
+    //             'delivery_address' => $request->delivery_address,
+    //         ]);
+
+    //         foreach ($cart->items as $cartItem) {
+    //             OrderItem::create([
+    //                 'order_id' => $order->id,
+    //                 'food_id' => $cartItem->food_id,
+    //                 'quantity' => $cartItem->quantity,
+    //                 'unit_price' => $cartItem->food->price,
+    //                 'subtotal' => $cartItem->quantity * $cartItem->food->price,
+    //             ]);
+    //         }
+
+    //         $cart->items()->delete();
+
+    //         $order->load([
+    //             'items.food',
+    //             'restaurant',
+    //         ]);
+
+    //         return response()->json([
+    //             'message' => 'Order placed successfully.',
+    //             'order' => $order,
+    //         ], 201);
+    //     });
+    // }
     public function checkout(Request $request): JsonResponse
     {
-        $request->validate([
+        $validated = $request->validate([
+            'delivery_zone_id' => [
+                'required',
+                'integer',
+                'exists:delivery_zones,id',
+            ],
+
             'delivery_address' => [
                 'required',
                 'string',
@@ -132,6 +230,15 @@ class OrderController extends Controller
         }
 
         // Make sure all foods are currently available.
+        // $unavailableItems = $cart->items->filter(function ($item) {
+        //     return ! $item->food->is_available;
+        // });
+
+        // if ($unavailableItems->isNotEmpty()) {
+        //     return response()->json([
+        //         'message' => 'Some items in your cart are currently unavailable.',
+        //     ], 422);
+        // }
         $unavailableItems = $cart->items->filter(function ($item) {
             return ! $item->food->is_available;
         });
@@ -139,31 +246,107 @@ class OrderController extends Controller
         if ($unavailableItems->isNotEmpty()) {
             return response()->json([
                 'message' => 'Some items in your cart are currently unavailable.',
+                'unavailable_items' => $unavailableItems->map(function ($item) {
+                    return [
+                        'cart_item_id' => $item->id,
+                        'food_id' => $item->food->id,
+                        'name' => $item->food->name,
+                    ];
+                })->values(),
             ], 422);
         }
 
-        return DB::transaction(function () use ($cart, $request, $user) {
+        /*
+    |--------------------------------------------------------------------------
+    | Restaurant
+    |--------------------------------------------------------------------------
+    */
 
-            $restaurantId = $cart->items->first()->food->restaurant_id;
+        $restaurantId = $restaurantIds->first();
+
+        $restaurant = Restaurant::findOrFail($restaurantId);
+
+        /*
+    |--------------------------------------------------------------------------
+    | Delivery Zone
+    |--------------------------------------------------------------------------
+    */
+
+        $deliveryZone = DeliveryZone::query()
+            ->whereKey($validated['delivery_zone_id'])
+            ->where('is_active', true)
+            ->first();
+
+        if (! $deliveryZone) {
+            return response()->json([
+                'message' => 'The selected delivery zone is not available.',
+            ], 422);
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Restaurant Delivery Zone Check
+    |--------------------------------------------------------------------------
+    */
+
+        if (! $restaurant->deliveryZones()
+            ->whereKey($deliveryZone->id)
+            ->exists()) {
+
+            return response()->json([
+                'message' => 'This restaurant does not deliver to the selected delivery zone.',
+            ], 422);
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Create Order
+    |--------------------------------------------------------------------------
+    */
+
+        return DB::transaction(function () use (
+            $cart,
+            $validated,
+            $user,
+            $restaurantId,
+            $deliveryZone
+        ) {
 
             $subtotal = $cart->items->sum(function ($item) {
                 return $item->quantity * $item->food->price;
             });
 
-            $deliveryFee = 0;
+            /*
+        |--------------------------------------------------------------------------
+        | Dynamic Delivery Fee
+        |--------------------------------------------------------------------------
+        */
+
+            $deliveryFee = $deliveryZone->delivery_fee;
 
             $total = $subtotal + $deliveryFee;
 
             $order = Order::create([
                 'user_id' => $user->id,
                 'restaurant_id' => $restaurantId,
+                'delivery_zone_id' => $deliveryZone->id,
+
                 'order_number' => 'ORD-' . strtoupper(Str::random(10)),
+
                 'status' => 'pending',
+
                 'subtotal' => $subtotal,
                 'delivery_fee' => $deliveryFee,
                 'total' => $total,
-                'delivery_address' => $request->delivery_address,
+
+                'delivery_address' => $validated['delivery_address'],
             ]);
+
+            /*
+        |--------------------------------------------------------------------------
+        | Order Items
+        |--------------------------------------------------------------------------
+        */
 
             foreach ($cart->items as $cartItem) {
                 OrderItem::create([
@@ -175,11 +358,24 @@ class OrderController extends Controller
                 ]);
             }
 
+            /*
+        |--------------------------------------------------------------------------
+        | Clear Cart
+        |--------------------------------------------------------------------------
+        */
+
             $cart->items()->delete();
+
+            /*
+        |--------------------------------------------------------------------------
+        | Load Order Relationships
+        |--------------------------------------------------------------------------
+        */
 
             $order->load([
                 'items.food',
                 'restaurant',
+                'deliveryZone',
             ]);
 
             return response()->json([
@@ -201,6 +397,7 @@ class OrderController extends Controller
         $order->load([
             'items.food',
             'restaurant',
+            'deliveryZone',
         ]);
 
         return response()->json([
